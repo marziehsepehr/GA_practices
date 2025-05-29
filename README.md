@@ -6,12 +6,13 @@ This project is a modular playground for experimenting with Large Language Model
 
 - **Summarization:** Chunking and step-by-step summarization of large documents using local HuggingFace models.
 - **PDF Support:** Reads and processes PDF files.
-- **Configurable:** Configs like all Model and cache paths set via `config.py`.
+- **Interactive Web App:** Summarize PDFs directly in your browser using the Streamlit-based `summarizer_app.py`.
+- **Configurable:** All model and cache paths set via `config.py`.
 - **Extensible:** Structure supports adding new LLM-based modules (NER, QA, etc.).
 
 ## Planned Modules
 
-- [x] Summarization
+- [x] Summarization (Jupyter notebook & Streamlit app)
 - [ ] Named Entity Recognition (NER)
 - [ ] Question Answering (QA)
 - [ ] Custom LLM Experiments
@@ -23,6 +24,7 @@ This project is a modular playground for experimenting with Large Language Model
 ├── config.py             # Configuration file for model/cache settings
 ├── config_loader.py      # Loads config.py dynamically
 ├── summrizer.ipynb       # Summarization notebook
+├── summarizer_app.py     # Streamlit app for PDF summarization
 ├── The McKinsey Way...pdf  # Example PDF book
 ├── .gitignore
 ├── LICENSE
@@ -36,6 +38,7 @@ This project is a modular playground for experimenting with Large Language Model
 - [torch](https://pytorch.org/)
 - [nltk](https://www.nltk.org/)
 - [PyPDF2](https://pypi.org/project/PyPDF2/)
+- [streamlit](https://streamlit.io/)
 
 Install dependencies:
 ```bash
@@ -51,7 +54,8 @@ pip install -r requirements.txt
    The notebook will automatically download required NLTK data to your cache directory.
 
 3. **Run a module:**  
-   Open the relevant notebook (e.g., `summrizer.ipynb`) in Jupyter or VS Code and run all cells.
+   - For the Jupyter notebook, open `summrizer.ipynb` in Jupyter or VS Code and run all cells.
+   - For the Streamlit app, run `streamlit run summarizer_app.py` in your terminal and open the provided URL in your browser.
 
 
 
