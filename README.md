@@ -23,7 +23,7 @@ This project is a modular playground for experimenting with Large Language Model
 .
 ├── config.py             # Configuration file for model/cache settings
 ├── config_loader.py      # Loads config.py dynamically
-├── summrizer.ipynb       # Summarization notebook
+├── summarizer.ipynb       # Summarization notebook
 ├── summarizer_app.py     # Streamlit app for PDF summarization
 ├── The McKinsey Way...pdf  # Example PDF book
 ├── .gitignore
@@ -54,7 +54,7 @@ pip install -r requirements.txt
    The notebook will automatically download required NLTK data to your cache directory.
 
 3. **Run a module:**  
-   - For the Jupyter notebook, open `summrizer.ipynb` in Jupyter or VS Code and run all cells.
+   - For the Jupyter notebook, open `summarizer.ipynb` in Jupyter or VS Code and run all cells.
    - For the Streamlit app, run `streamlit run summarizer_app.py` in your terminal and open the provided URL in your browser.
 
 
