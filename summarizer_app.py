@@ -1,83 +1,121 @@
 import os
-import nltk
-import PyPDF2
 import streamlit as st
-from nltk.tokenize import sent_tokenize
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
+from PyPDF2 import PdfReader
+import nltk
+from nltk.tokenize import sent_tokenize
+import config_loader
 
-# === Setup Streamlit ===
-st.set_page_config(page_title="📄 PDF Summarizer", layout="wide")
-st.title("📘 Summarize PDF Using Local LLM")
+# Load config
+config = config_loader.load_config("config.py")
+CACHE_DIR = getattr(config, "CACHE_DIR")
+DEFAULT_MODEL = getattr(config, "MODEL_NAME",)
+DEFAULT_MAX_LEN = getattr(config, "MAX_SUMMARY_LENGTH", 120)
+DEFAULT_MIN_LEN = getattr(config, "MIN_SUMMARY_LENGTH", 30)
 
-# === Select model ===
-model_options = {
-    "BART (facebook/bart-large-cnn)": "facebook/bart-large-cnn",
-    "T5 (t5-base)": "t5-base",
-    "Pegasus (google/pegasus-xsum)": "google/pegasus-xsum"
-}
-selected_model_label = st.selectbox("🔁 Choose a summarization model:", list(model_options.keys()))
-selected_model_name = model_options[selected_model_label]
-
-# === Summary length settings ===
-max_len = st.slider("📏 Max Summary Length", 30, 300, 120)
-min_len = st.slider("📐 Min Summary Length", 5, max_len - 5, 30)
 
 # === Setup NLTK ===
-nltk.download("punkt")
+NLTK_DATA_DIR = os.path.join(CACHE_DIR, "nltk_data")
+os.makedirs(NLTK_DATA_DIR, exist_ok=True)
+nltk.download("punkt", download_dir=NLTK_DATA_DIR)
+nltk.download('punkt_tab',download_dir=NLTK_DATA_DIR)
+nltk.data.path.append(NLTK_DATA_DIR)
 
-# === Load summarizer with feedback ===
+# Streamlit settings
+st.set_page_config(page_title="LLM Summarizer", layout="wide")
+st.title("📚 PDF Summarizer with HuggingFace LLM")
+
+# Model options
+model_options = {
+    "BART Large CNN": "facebook/bart-large-cnn",
+    "T5 small": "t5-small",
+    "Falcon (Tiny)": "Falconsai/text_summarization"
+}
+
+selected_model_name = st.selectbox("🤖 Choose model", list(model_options.values()), index=list(model_options.values()).index(DEFAULT_MODEL))
+max_len = st.slider("✂️ Max Summary Length", 30, 300, DEFAULT_MAX_LEN)
+min_len = st.slider("📏 Min Summary Length", 5, max_len - 5, DEFAULT_MIN_LEN)
+
+# Load model with cache and progress
 @st.cache_resource
-def load_summarizer(model_name):
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
-    return pipeline("summarization", model=model, tokenizer=tokenizer)
+def load_summarizer_with_progress(model_name, cache_dir):
+    progress_bar = st.progress(0, text="🚀 Downloading model files...")
+    tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir)
+    progress_bar.progress(40, "🔤 Tokenizer loaded")
 
-with st.spinner("⏳ Loading model... (If this is your first time, downloading may take a few minutes)"):
-    summarizer = load_summarizer(selected_model_name)
-st.success("✅ Model is ready.")
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name, cache_dir=cache_dir)
+    progress_bar.progress(80, "🧠 Model loaded")
 
-# === Read PDF ===
-def read_pdf(file):
-    reader = PyPDF2.PdfReader(file)
-    return "\n".join(page.extract_text() or "" for page in reader.pages)
+    summarizer = pipeline("summarization", model=model, tokenizer=tokenizer)
+    progress_bar.progress(100, "✅ Summarizer ready")
+    return summarizer
 
-# === Chunking text ===
-def chunk_text(text, tokenizer, max_chunk_tokens=512):
+# File upload
+pdf_file = st.file_uploader("📤 Upload a PDF file", type="pdf")
+
+# Summarizer loading
+summarizer = load_summarizer_with_progress(selected_model_name, CACHE_DIR)
+
+# PDF processing
+def read_pdf_text(file):
+    reader = PdfReader(file)
+    total_pages = len(reader.pages)
+    progress_bar = st.progress(0, text="📄 Reading PDF pages...")
+    text = ""
+
+    for i, page in enumerate(reader.pages):
+        text += page.extract_text() or ""
+        progress_bar.progress((i + 1) / total_pages, text=f"📄 Reading PDF pages... ({i+1}/{total_pages})")
+
+    progress_bar.empty()
+    return text
+
+def summarize_text(text, summarizer, max_len=120, min_len=30):
     sentences = sent_tokenize(text)
-    chunks, current_chunk = [], ""
-    for sentence in sentences:
-        if len(tokenizer.encode(current_chunk + " " + sentence)) < max_chunk_tokens:
-            current_chunk += " " + sentence
-        else:
-            chunks.append(current_chunk.strip())
-            current_chunk = sentence
-    if current_chunk:
-        chunks.append(current_chunk.strip())
-    return chunks
+    chunks = []
+    chunk = ""
+    max_chunk_len = 512
 
-# === Summarization function ===
-def summarize_text(text):
-    tokenizer = summarizer.tokenizer
-    chunks = chunk_text(text, tokenizer)
+    # Split into chunks
+    for sentence in sentences:
+        if len(chunk) + len(sentence) < max_chunk_len:
+            chunk += " " + sentence
+        else:
+            chunks.append(chunk.strip())
+            chunk = sentence
+    if chunk:
+        chunks.append(chunk.strip())
+
+    progress_bar = st.progress(0, text="📝 Summarizing text chunks...")
     summaries = []
 
     for i, chunk in enumerate(chunks):
         try:
-            with st.spinner(f"✂️ Summarizing chunk {i+1}/{len(chunks)}..."):
-                summary = summarizer(chunk, max_length=max_len, min_length=min_len, do_sample=False)[0]["summary_text"]
-                summaries.append(summary)
+            input_len = len(summarizer.tokenizer.encode(chunk, truncation=True))
+            max_l = min(int(input_len * 0.5), max_len)
+            min_l = min_len
+            if max_l <= min_l:
+                min_l = max(5, int(max_l * 0.5))
+
+            summary = summarizer(chunk, max_length=max_l, min_length=min_l, do_sample=False)
+            summaries.append(summary[0]["summary_text"])
         except Exception as e:
-            st.warning(f"⚠️ Skipped chunk {i+1} due to error: {e}")
-    return "\n\n".join(summaries)
+            st.warning(f"⚠️ Skipping a chunk due to error: {e}")
+            continue
 
-# === File uploader and UI ===
-pdf_file = st.file_uploader("📤 Upload a PDF file", type="pdf")
+        progress_bar.progress((i + 1) / len(chunks), text=f"📝 Summarizing text chunks... ({i+1}/{len(chunks)})")
 
+    progress_bar.empty()
+    return " ".join(summaries)
+
+
+# Run
 if pdf_file:
-    raw_text = read_pdf(pdf_file)
-    st.text_area("📖 Preview of the document", raw_text[:2000] + "...", height=250)
+    with st.spinner("📖 Reading PDF..."):
+        raw_text = read_pdf_text(pdf_file)
 
-    if st.button("🚀 Summarize PDF"):
-        summary = summarize_text(raw_text)
-        st.subheader("✅ Summary")
-        st.text_area("Summary Output", summary, height=400)
+    with st.spinner("📝 Summarizing..."):
+        final_summary = summarize_text(raw_text, summarizer, max_len, min_len)
+
+    st.subheader("📄 Summary")
+    st.write(final_summary)
